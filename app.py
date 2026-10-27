@@ -46,6 +46,7 @@ def close_db(error=None):
 
 
 def init_db():
+    print(f"Initializing database at: {DATABASE}", flush=True)
     db = sqlite3.connect(DATABASE)
     db.execute("PRAGMA foreign_keys = ON")
 
