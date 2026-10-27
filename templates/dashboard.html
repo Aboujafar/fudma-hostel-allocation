@@ -1,0 +1,72 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Student Dashboard</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+
+<header class="header">
+    <h1>Student Dashboard</h1>
+    <nav>
+        <a href="{{ url_for('index') }}">Home</a>
+        <form method="post" action="{{ url_for('logout') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit">Logout</button>
+        </form>
+    </nav>
+</header>
+
+<main class="section">
+    <div class="section-heading">
+        <h2>Welcome, {{ session['full_name'] }}</h2>
+        <p>Manage your student hostel application here.</p>
+    </div>
+
+    {% for category, message in get_flashed_messages(with_categories=true) %}
+        <p class="notice {{ category }}">{{ message }}</p>
+    {% endfor %}
+
+    {% if application %}
+        <article class="hostel-card">
+            <h3>Your Application</h3>
+            <p>Preferred hostel: {{ application['hostel_name'] }}</p>
+            <p>Status: <strong>{{ application['status']|capitalize }}</strong></p>
+
+            {% if application['status'] == 'approved' %}
+                <p>Allocated bed number: {{ application['bed_number'] }}</p>
+            {% elif application['status'] == 'pending' %}
+                <p>Your application is awaiting an administrator's decision.</p>
+            {% else %}
+                <p>Your application was rejected. Contact the appropriate office for guidance.</p>
+            {% endif %}
+        </article>
+    {% else %}
+        <form id="applicationForm" method="post"
+              action="{{ url_for('apply') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+            <h3>Submit a Hostel Application</h3>
+
+            <label for="hostel_id">Preferred Hostel</label>
+            <select id="hostel_id" name="hostel_id" required>
+                <option value="">Select a hostel</option>
+                {% for hostel in hostels %}
+                    <option value="{{ hostel['id'] }}">
+                        {{ hostel['name'] }}
+                    </option>
+                {% endfor %}
+            </select>
+
+            <button type="submit" class="submit-button">
+                Submit Application
+            </button>
+        </form>
+    {% endif %}
+</main>
+
+</body>
+</html>

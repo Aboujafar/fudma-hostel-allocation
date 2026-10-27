@@ -1,0 +1,80 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Dashboard</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+
+<header class="header">
+    <h1>Hostel Administration</h1>
+    <nav>
+        <a href="{{ url_for('index') }}">Home</a>
+        <form method="post" action="{{ url_for('logout') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit">Logout</button>
+        </form>
+    </nav>
+</header>
+
+<main class="section">
+    <div class="section-heading">
+        <h2>Administrator Dashboard</h2>
+        <p>Review applications and manage allocation decisions.</p>
+    </div>
+
+    {% for category, message in get_flashed_messages(with_categories=true) %}
+        <p class="notice {{ category }}">{{ message }}</p>
+    {% endfor %}
+
+    <h3>Hostel Occupancy</h3>
+    <div class="hostel-grid">
+        {% for hostel in hostels %}
+            <article class="hostel-card">
+                <h3>{{ hostel['name'] }}</h3>
+                <p>Configured capacity: {{ hostel['capacity'] }}</p>
+                <p>Allocated beds: {{ hostel['occupied'] }}</p>
+                <p>Remaining beds: {{ hostel['capacity'] - hostel['occupied'] }}</p>
+            </article>
+        {% endfor %}
+    </div>
+
+    <h3 style="margin-top:40px;">Student Applications</h3>
+
+    {% if applications %}
+        {% for item in applications %}
+            <article class="hostel-card" style="margin-top:18px;">
+                <h3>{{ item['full_name'] }}</h3>
+                <p>Matric number: {{ item['matric_number'] }}</p>
+                <p>Department: {{ item['department'] }}</p>
+                <p>Level: {{ item['level'] }}</p>
+                <p>Preferred hostel: {{ item['hostel_name'] }}</p>
+                <p>Status: <strong>{{ item['status']|capitalize }}</strong></p>
+
+                {% if item['status'] == 'pending' %}
+                    <form method="post"
+                          action="{{ url_for('update_application',
+                              application_id=item['id'], action='approve') }}">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <button type="submit">Approve &amp; Allocate Bed</button>
+                    </form>
+
+                    <form method="post"
+                          action="{{ url_for('update_application',
+                              application_id=item['id'], action='reject') }}">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <button type="submit">Reject Application</button>
+                    </form>
+                {% endif %}
+            </article>
+        {% endfor %}
+    {% else %}
+        <p>No applications have been submitted yet.</p>
+    {% endif %}
+</main>
+
+</body>
+</html>

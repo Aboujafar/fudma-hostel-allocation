@@ -1,0 +1,67 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Student Registration</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+
+<header class="header">
+    <h1>Student Registration</h1>
+    <nav><a href="{{ url_for('index') }}">Home</a></nav>
+</header>
+
+<main class="section application-section">
+    <div class="section-heading">
+        <h2>Create Your Account</h2>
+        <p>Enter your student details to register.</p>
+    </div>
+
+    {% for category, message in get_flashed_messages(with_categories=true) %}
+        <p class="notice {{ category }}">{{ message }}</p>
+    {% endfor %}
+
+    <form id="applicationForm" method="post"
+          action="{{ url_for('register') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+        <label for="full_name">Full Name</label>
+        <input id="full_name" name="full_name"
+               required maxlength="100">
+
+        <label for="matric_number">Matriculation Number</label>
+        <input id="matric_number" name="matric_number"
+               required maxlength="50">
+
+        <label for="department">Department</label>
+        <input id="department" name="department"
+               required maxlength="100">
+
+        <label for="level">Level</label>
+        <select id="level" name="level" required>
+            <option value="">Select level</option>
+            <option value="100">100 Level</option>
+            <option value="200">200 Level</option>
+            <option value="300">300 Level</option>
+            <option value="400">400 Level</option>
+            <option value="500">500 Level</option>
+        </select>
+
+        <label for="password">Password (at least 8 characters)</label>
+        <input id="password" name="password" type="password"
+               minlength="8" autocomplete="new-password" required>
+
+        <button class="submit-button" type="submit">Register</button>
+    </form>
+
+    <p style="text-align:center; margin-top:20px;">
+        Already registered?
+        <a href="{{ url_for('login') }}">Log in here</a>
+    </p>
+</main>
+
+</body>
+</html>

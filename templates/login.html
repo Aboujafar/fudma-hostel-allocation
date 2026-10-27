@@ -1,0 +1,49 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+
+<header class="header">
+    <h1>FUDMA Hostel Portal</h1>
+    <nav><a href="{{ url_for('index') }}">Home</a></nav>
+</header>
+
+<main class="section application-section">
+    <div class="section-heading">
+        <h2>Welcome Back</h2>
+        <p>Log in to access your account.</p>
+    </div>
+
+    {% for category, message in get_flashed_messages(with_categories=true) %}
+        <p class="notice {{ category }}">{{ message }}</p>
+    {% endfor %}
+
+    <form id="applicationForm" method="post"
+          action="{{ url_for('login') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+        <label for="matric_number">Matriculation Number / Admin ID</label>
+        <input id="matric_number" name="matric_number"
+               autocomplete="username" required>
+
+        <label for="password">Password</label>
+        <input id="password" name="password" type="password"
+               autocomplete="current-password" required>
+
+        <button type="submit" class="submit-button">Login</button>
+    </form>
+
+    <p style="text-align:center; margin-top:20px;">
+        New student?
+        <a href="{{ url_for('register') }}">Create an account</a>
+    </p>
+</main>
+
+</body>
+</html>
