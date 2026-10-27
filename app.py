@@ -385,6 +385,8 @@ def update_application(application_id, action):
     return redirect(url_for("admin"))
 
 
+# Initialize the database when the application starts.
+init_db()
+
 if __name__ == "__main__":
-    init_db()
     app.run(debug=False)
