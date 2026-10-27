@@ -599,7 +599,7 @@ form select {
     padding: 30px 20px;
     text-align: center;
     background: #f2f6fa;
-    border-left: 5px solid #008080;
+    border-left: 5px solid #9c2525;
     border-radius: 10px;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
 }
@@ -612,7 +612,7 @@ form select {
 
 .course-info .group-project {
     margin: 10px 0;
-    color: #008080;
+    color:  #9c2525;
     font-size: 18px;
     font-weight: bold;
 }
@@ -632,4 +632,28 @@ form select {
     .course-info h2 {
         font-size: 20px;
     }
+}
+
+/* Hostel images */
+.hostel-image {
+    width: 100%;
+    height: 220px;
+    object-fit: cover;
+    display: block;
+    border-radius: 10px 10px 0 0;
+}
+
+/* Keep hostel cards neat */
+.hostel-card {
+    overflow: hidden;
+}
+
+.hostel-card h3,
+.hostel-card p {
+    margin-left: 15px;
+    margin-right: 15px;
+}
+
+.hostel-card .button {
+    margin: 0 15px 15px;
 }

@@ -79,20 +79,57 @@
             <p>Choose from the three hostel locations in this project.</p>
         </div>
 
-        <div class="hostel-grid">
-            {% for hostel in hostels %}
-                <article class="hostel-card">
-                    <div class="hostel-icon">🏠</div>
-                    <h3>{{ hostel['name'] }}</h3>
-                    <p>Explore this student accommodation option.</p>
-                    {% if session.get('user_id') %}
-                        <a class="button" href="{{ url_for('dashboard') }}">Apply</a>
-                    {% else %}
-                        <a class="button" href="{{ url_for('register') }}">Apply</a>
-                    {% endif %}
-                </article>
-            {% endfor %}
-        </div>
+        
+<div class="hostel-grid">
+
+    <article class="hostel-card">
+        <img src="{{ url_for('static', filename='images/darawa-logo.png') }}"
+             alt="Darawa Hostel"
+             class="hostel-image">
+
+        <h3>Darawa Hostel</h3>
+        <p>Explore this student accommodation option.</p>
+
+        {% if session.get('user_id') %}
+            <a class="button" href="{{ url_for('dashboard') }}">Apply</a>
+        {% else %}
+            <a class="button" href="{{ url_for('register') }}">Apply</a>
+        {% endif %}
+    </article>
+
+    <article class="hostel-card">
+        <img src="{{ url_for('static', filename='images/hayingada-logo.png') }}"
+             alt="Hayingada Hostel"
+             class="hostel-image">
+
+        <h3>Hayingada Hostel</h3>
+        <p>Explore this student accommodation option.</p>
+
+        {% if session.get('user_id') %}
+            <a class="button" href="{{ url_for('dashboard') }}">Apply</a>
+        {% else %}
+            <a class="button" href="{{ url_for('register') }}">Apply</a>
+        {% endif %}
+    </article>
+
+    <article class="hostel-card">
+        <img src="{{ url_for('static', filename='images/isakaita-logo.png') }}"
+             alt="Isa Kaita Hostel"
+             class="hostel-image">
+
+        <h3>Isa Kaita Hostel</h3>
+        <p>Explore this student accommodation option.</p>
+
+        {% if session.get('user_id') %}
+            <a class="button" href="{{ url_for('dashboard') }}">Apply</a>
+        {% else %}
+            <a class="button" href="{{ url_for('register') }}">Apply</a>
+        {% endif %}
+    </article>
+
+</div>
+
+
     </section>
 
     <section class="section services" id="services">
