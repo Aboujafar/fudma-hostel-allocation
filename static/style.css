@@ -591,3 +591,45 @@ form select {
     vertical-align: middle;
     margin-right: 10px;
 }
+
+/* Course and Group Project Information */
+.course-info {
+    max-width: 900px;
+    margin: 40px auto;
+    padding: 30px 20px;
+    text-align: center;
+    background: #f2f6fa;
+    border-left: 5px solid #008080;
+    border-radius: 10px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+
+.course-info h2 {
+    margin: 15px 0 10px;
+    color: #162f52;
+    font-size: 25px;
+}
+
+.course-info .group-project {
+    margin: 10px 0;
+    color: #008080;
+    font-size: 18px;
+    font-weight: bold;
+}
+
+.course-info .project-title {
+    margin-top: 12px;
+    color: #333;
+    font-size: 16px;
+}
+
+@media (max-width: 600px) {
+    .course-info {
+        margin: 25px 15px;
+        padding: 22px 15px;
+    }
+
+    .course-info h2 {
+        font-size: 20px;
+    }
+}
