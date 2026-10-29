@@ -4,64 +4,297 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Student Registration</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <title>Student Registration | FUDMA</title>
+    <link rel="stylesheet"
+          href="{{ url_for('static', filename='style.css') }}">
+
+    <style>
+        .registration-card {
+            max-width: 760px;
+            margin: 35px auto;
+            padding: 30px;
+            background: #ffffff;
+            border-radius: 14px;
+            box-shadow: 0 5px 24px rgba(0, 0, 0, 0.08);
+        }
+
+        .registration-card h2 {
+            color: #14532d;
+            margin-bottom: 8px;
+        }
+
+        .registration-card .intro {
+            color: #64748b;
+            margin-bottom: 25px;
+        }
+
+        .form-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 17px;
+        }
+
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 7px;
+        }
+
+        .form-group.full-width {
+            grid-column: 1 / -1;
+        }
+
+        .form-group label {
+            font-weight: 600;
+            color: #334155;
+        }
+
+        .form-group input,
+        .form-group select {
+            width: 100%;
+            box-sizing: border-box;
+            padding: 12px;
+            border: 1px solid #cbd5e1;
+            border-radius: 7px;
+            font-size: 15px;
+            background: #fff;
+        }
+
+        .form-group input:focus,
+        .form-group select:focus {
+            outline: 2px solid #86efac;
+            border-color: #15803d;
+        }
+
+        .form-heading {
+            grid-column: 1 / -1;
+            margin-top: 12px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid #e2e8f0;
+            color: #166534;
+            font-size: 17px;
+        }
+
+        .registration-card .submit-button {
+            width: 100%;
+            margin-top: 25px;
+            padding: 13px;
+            border: none;
+            border-radius: 7px;
+            background: #166534;
+            color: white;
+            font-size: 16px;
+            font-weight: 700;
+            cursor: pointer;
+        }
+
+        .registration-card .submit-button:hover {
+            background: #14532d;
+        }
+
+        .form-note {
+            font-size: 13px;
+            color: #64748b;
+        }
+
+        .login-link {
+            text-align: center;
+            margin-top: 22px;
+        }
+
+        @media (max-width: 600px) {
+            .registration-card {
+                margin: 20px 12px;
+                padding: 20px;
+            }
+
+            .form-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .form-group.full-width,
+            .form-heading {
+                grid-column: auto;
+            }
+        }
+    </style>
 </head>
+
 <body>
 
 <header class="header">
-    <h1>Student Registration</h1>
-    <nav><a href="{{ url_for('index') }}">Home</a></nav>
+    <h1>FUDMA Student Accommodation Services</h1>
+    <nav>
+        <a href="{{ url_for('index') }}">Home</a>
+        <a href="{{ url_for('login') }}">Login</a>
+    </nav>
 </header>
 
-<main class="section application-section">
-    <div class="section-heading">
-        <h2>Create Your Account</h2>
-        <p>Enter your student details to register.</p>
+<main class="section">
+    <div class="registration-card">
+        <h2>Create Your Student Account</h2>
+        <p class="intro">
+            Complete all required fields to register for student accommodation services.
+        </p>
+
+        {% for category, message in get_flashed_messages(with_categories=true) %}
+            <p class="notice {{ category }}">{{ message }}</p>
+        {% endfor %}
+
+        <form id="applicationForm"
+              method="post"
+              action="{{ url_for('register') }}">
+
+            <input type="hidden"
+                   name="csrf_token"
+                   value="{{ csrf_token() }}">
+
+            <div class="form-grid">
+
+                <h3 class="form-heading">Student Information</h3>
+
+                <div class="form-group">
+                    <label for="full_name">Full Name *</label>
+                    <input id="full_name"
+                           name="full_name"
+                           type="text"
+                           maxlength="100"
+                           autocomplete="name"
+                           required>
+                </div>
+
+                <div class="form-group">
+                    <label for="matric_number">Matriculation Number *</label>
+                    <input id="matric_number"
+                           name="matric_number"
+                           type="text"
+                           maxlength="50"
+                           required>
+                </div>
+
+                <div class="form-group full-width">
+                    <label for="email">Email Address *</label>
+                    <input id="email"
+                           name="email"
+                           type="email"
+                           maxlength="254"
+                           autocomplete="email"
+                           placeholder="example@email.com"
+                           required>
+                </div>
+
+                <div class="form-group">
+                    <label for="department">Department *</label>
+                    <input id="department"
+                           name="department"
+                           type="text"
+                           maxlength="100"
+                           required>
+                </div>
+
+                <div class="form-group">
+                    <label for="level">Level *</label>
+                    <select id="level" name="level" required>
+                        <option value="">Select level</option>
+                        <option value="100">100 Level</option>
+                        <option value="200">200 Level</option>
+                        <option value="300">300 Level</option>
+                        <option value="400">400 Level</option>
+                        <option value="500">500 Level</option>
+                    </select>
+                </div>
+
+                <div class="form-group full-width">
+                    <label for="student_contact">Student Contact Number *</label>
+                    <input id="student_contact"
+                           name="student_contact"
+                           type="tel"
+                           maxlength="20"
+                           autocomplete="tel"
+                           placeholder="e.g. 08012345678"
+                           pattern="[0-9+() -]{7,20}"
+                           required>
+                </div>
+
+                <h3 class="form-heading">Next-of-Kin Information</h3>
+
+                <div class="form-group full-width">
+                    <label for="next_of_kin_name">Next-of-Kin Full Name *</label>
+                    <input id="next_of_kin_name"
+                           name="next_of_kin_name"
+                           type="text"
+                           maxlength="100"
+                           required>
+                </div>
+
+                <div class="form-group full-width">
+                    <label for="next_of_kin_contact">
+                        Next-of-Kin Contact Number *
+                    </label>
+                    <input id="next_of_kin_contact"
+                           name="next_of_kin_contact"
+                           type="tel"
+                           maxlength="20"
+                           pattern="[0-9+() -]{7,20}"
+                           placeholder="e.g. 08012345678"
+                           required>
+                </div>
+
+                <h3 class="form-heading">Account Security</h3>
+
+                <div class="form-group full-width">
+                    <label for="password">
+                        Password (at least 8 characters) *
+                    </label>
+                    <input id="password"
+                           name="password"
+                           type="password"
+                           minlength="8"
+                           autocomplete="new-password"
+                           required>
+                    <span class="form-note">
+                        Choose a password that is difficult to guess.
+                    </span>
+                </div>
+
+                <div class="form-group full-width">
+                    <label for="confirm_password">Confirm Password *</label>
+                    <input id="confirm_password"
+                           name="confirm_password"
+                           type="password"
+                           minlength="8"
+                           autocomplete="new-password"
+                           required>
+                </div>
+
+            </div>
+
+            <button class="submit-button" type="submit">
+                Create Account
+            </button>
+        </form>
+
+        <p class="login-link">
+            Already registered?
+            <a href="{{ url_for('login') }}">Log in here</a>
+        </p>
     </div>
-
-    {% for category, message in get_flashed_messages(with_categories=true) %}
-        <p class="notice {{ category }}">{{ message }}</p>
-    {% endfor %}
-
-    <form id="applicationForm" method="post"
-          action="{{ url_for('register') }}">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-
-        <label for="full_name">Full Name</label>
-        <input id="full_name" name="full_name"
-               required maxlength="100">
-
-        <label for="matric_number">Matriculation Number</label>
-        <input id="matric_number" name="matric_number"
-               required maxlength="50">
-
-        <label for="department">Department</label>
-        <input id="department" name="department"
-               required maxlength="100">
-
-        <label for="level">Level</label>
-        <select id="level" name="level" required>
-            <option value="">Select level</option>
-            <option value="100">100 Level</option>
-            <option value="200">200 Level</option>
-            <option value="300">300 Level</option>
-            <option value="400">400 Level</option>
-            <option value="500">500 Level</option>
-        </select>
-
-        <label for="password">Password (at least 8 characters)</label>
-        <input id="password" name="password" type="password"
-               minlength="8" autocomplete="new-password" required>
-
-        <button class="submit-button" type="submit">Register</button>
-    </form>
-
-    <p style="text-align:center; margin-top:20px;">
-        Already registered?
-        <a href="{{ url_for('login') }}">Log in here</a>
-    </p>
 </main>
+
+<script>
+    const registrationForm = document.getElementById("applicationForm");
+
+    registrationForm.addEventListener("submit", function (event) {
+        const password = document.getElementById("password").value;
+        const confirmPassword =
+            document.getElementById("confirm_password").value;
+
+        if (password !== confirmPassword) {
+            event.preventDefault();
+            alert("The passwords do not match. Please check and try again.");
+        }
+    });
+</script>
 
 </body>
 </html>
