@@ -8,104 +8,124 @@ from flask import (
     Flask, render_template, request, redirect,
     url_for, session, flash, g, abort
 )
-
 from werkzeug.security import generate_password_hash, check_password_hash
-
 from flask_wtf.csrf import CSRFProtect
+# --------------------------------------------------
+# APPLICATION CONFIGURATION
+# --------------------------------------------------
 
 BASE_DIR = Path(__file__).resolve().parent
 DATABASE = BASE_DIR / "hostel.db"
 
 app = Flask(__name__)
+
 app.config["SECRET_KEY"] = os.environ.get("FLASK_SECRET_KEY")
 
 if not app.config["SECRET_KEY"]:
     raise RuntimeError(
         "Set FLASK_SECRET_KEY before starting the application."
-    
     )
 app.config["SESSION_COOKIE_HTTPONLY"] = True
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 app.config["SESSION_COOKIE_SECURE"] = (
     os.environ.get("FLASK_HTTPS_ONLY", "0") == "1"
 )
+
 csrf = CSRFProtect(app)
+
+
+# --------------------------------------------------
+# DATABASE CONNECTION
+# --------------------------------------------------
+
 def get_db():
     if "db" not in g:
         g.db = sqlite3.connect(DATABASE, timeout=10)
         g.db.row_factory = sqlite3.Row
         g.db.execute("PRAGMA foreign_keys = ON")
+
     return g.db
 
 
 @app.teardown_appcontext
 def close_db(error=None):
     db = g.pop("db", None)
+
     if db is not None:
         db.close()
 
 
 def init_db():
-    print(f"Initializing database at: {DATABASE}", flush=True)
-    db = sqlite3.connect(DATABASE)
+    """Create required tables without deleting existing records."""
+    db = sqlite3.connect(DATABASE, timeout=10)
     db.execute("PRAGMA foreign_keys = ON")
 
-    db.executescript("""
-        CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            full_name TEXT NOT NULL,
-            matric_number TEXT NOT NULL UNIQUE,
-            department TEXT NOT NULL,
-            level TEXT NOT NULL,
-            password_hash TEXT NOT NULL,
-            role TEXT NOT NULL DEFAULT 'student'
-                CHECK(role IN ('student', 'admin'))
-        );
+    try:
+        db.executescript("""
+            CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                full_name TEXT NOT NULL,
+                matric_number TEXT NOT NULL UNIQUE,
+                department TEXT NOT NULL,
+                level TEXT NOT NULL,
+                password_hash TEXT NOT NULL,
+                role TEXT NOT NULL DEFAULT 'student'
+                    CHECK(role IN ('student', 'admin'))
+            );
 
-        CREATE TABLE IF NOT EXISTS hostels (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT NOT NULL UNIQUE,
-            capacity INTEGER NOT NULL CHECK(capacity >= 0)
-        );
+            CREATE TABLE IF NOT EXISTS hostels (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL UNIQUE,
+                capacity INTEGER NOT NULL CHECK(capacity >= 0)
+            );
 
-        CREATE TABLE IF NOT EXISTS applications (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL UNIQUE,
-            hostel_id INTEGER NOT NULL,
-            status TEXT NOT NULL DEFAULT 'pending'
-                CHECK(status IN ('pending', 'approved', 'rejected')),
-            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY(user_id) REFERENCES users(id),
-            FOREIGN KEY(hostel_id) REFERENCES hostels(id)
-        );
+            CREATE TABLE IF NOT EXISTS applications (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL UNIQUE,
+                hostel_id INTEGER NOT NULL,
+                status TEXT NOT NULL DEFAULT 'pending'
+                    CHECK(status IN ('pending', 'approved', 'rejected')),
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY(user_id) REFERENCES users(id),
+                FOREIGN KEY(hostel_id) REFERENCES hostels(id)
+            );
 
-        CREATE TABLE IF NOT EXISTS allocations (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL UNIQUE,
-            hostel_id INTEGER NOT NULL,
-            bed_number INTEGER NOT NULL,
-            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            UNIQUE(hostel_id, bed_number),
-            FOREIGN KEY(user_id) REFERENCES users(id),
-            FOREIGN KEY(hostel_id) REFERENCES hostels(id)
-        );
-    """)
+            CREATE TABLE IF NOT EXISTS allocations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL UNIQUE,
+                hostel_id INTEGER NOT NULL,
+                bed_number INTEGER NOT NULL,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(hostel_id, bed_number),
+                FOREIGN KEY(user_id) REFERENCES users(id),
+                FOREIGN KEY(hostel_id) REFERENCES hostels(id)
+            );
+        """)
 
-    # Demonstration capacities only. Replace with verified
-    # hostel capacities before using real university data.
-    for name in (
-        "Darawa Hostel",
-        "Hayin Gada Hostel",
-        "Isa Kaita Hostel"
-    ):
-        db.execute(
-            "INSERT OR IGNORE INTO hostels (name, capacity) VALUES (?, ?)",
-            (name, 100)
-        )
+        # Example capacities; replace with verified capacities.
+        for name in (
+            "Darawa Hostel",
+            "Hayin Gada Hostel",
+            "Isa Kaita Hostel"
+        ):
+            db.execute(
+                """
+                INSERT OR IGNORE INTO hostels (name, capacity)
+                VALUES (?, ?)
+                """,
+                (name, 100)
+            )
 
-    db.commit()
-    db.close()
+        db.commit()
+        print(f"Database initialized: {DATABASE}", flush=True)
 
+    finally:
+        db.close()
+
+
+# --------------------------------------------------
+# ACCESS CONTROL
+# --------------------------------------------------
 
 def login_required(view):
     @wraps(view)
@@ -113,7 +133,9 @@ def login_required(view):
         if "user_id" not in session:
             flash("Please log in to continue.", "error")
             return redirect(url_for("login"))
+
         return view(*args, **kwargs)
+
     return wrapped
 
 
@@ -122,18 +144,30 @@ def admin_required(view):
     def wrapped(*args, **kwargs):
         if session.get("role") != "admin":
             abort(403)
+
         return view(*args, **kwargs)
+
     return wrapped
 
+
+# --------------------------------------------------
+# HOME PAGE
+# --------------------------------------------------
 
 @app.route("/")
 def index():
     db = get_db()
+
     hostels = db.execute(
         "SELECT * FROM hostels ORDER BY name"
     ).fetchall()
+
     return render_template("index.html", hostels=hostels)
 
+
+# --------------------------------------------------
+# STUDENT REGISTRATION
+# --------------------------------------------------
 
 @app.route("/register", methods=["GET", "POST"])
 def register():
@@ -149,24 +183,38 @@ def register():
             return render_template("register.html")
 
         if len(password) < 8:
-            flash("Password must contain at least 8 characters.", "error")
+            flash(
+                "Password must contain at least 8 characters.",
+                "error"
+            )
             return render_template("register.html")
 
         db = get_db()
 
         try:
-            db.execute("""
+            db.execute(
+                """
                 INSERT INTO users
                 (full_name, matric_number, department, level, password_hash)
                 VALUES (?, ?, ?, ?, ?)
-            """, (
-                full_name, matric, department, level,
-                generate_password_hash(password)
-            ))
+                """,
+                (
+                    full_name,
+                    matric,
+                    department,
+                    level,
+                    generate_password_hash(password)
+                )
+            )
+
             db.commit()
+
         except sqlite3.IntegrityError:
             db.rollback()
-            flash("That matriculation number is already registered.", "error")
+            flash(
+                "That matriculation number is already registered.",
+                "error"
+            )
             return render_template("register.html")
 
         flash("Registration successful. Please log in.", "success")
@@ -175,6 +223,10 @@ def register():
     return render_template("register.html")
 
 
+# --------------------------------------------------
+# LOGIN
+# --------------------------------------------------
+
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if request.method == "POST":
@@ -182,12 +234,35 @@ def login():
         password = request.form.get("password", "")
 
         db = get_db()
+
+        # First, look for the exact account ID.
         user = db.execute(
             "SELECT * FROM users WHERE matric_number = ?",
             (matric,)
         ).fetchone()
 
-        if user and check_password_hash(user["password_hash"], password):
+        # Do not print passwords or password hashes.
+        password_matches = False
+
+        if user:
+            try:
+                password_matches = check_password_hash(
+                    user["password_hash"], password
+                )
+            except (ValueError, TypeError):
+                password_matches = False
+
+        # Temporary diagnostic: safe to share with support.
+        print(
+            "LOGIN DEBUG:",
+            "ID =", repr(matric),
+            "USER FOUND =", bool(user),
+            "PASSWORD MATCH =", password_matches,
+            "DATABASE =", str(DATABASE),
+            flush=True
+        )
+
+        if password_matches:
             session.clear()
             session["user_id"] = user["id"]
             session["full_name"] = user["full_name"]
@@ -198,10 +273,17 @@ def login():
 
             return redirect(url_for("dashboard"))
 
-        flash("Invalid matriculation number or password.", "error")
+        flash(
+            "Invalid matriculation number or password.",
+            "error"
+        )
 
     return render_template("login.html")
 
+
+# --------------------------------------------------
+# LOGOUT
+# --------------------------------------------------
 
 @app.route("/logout", methods=["POST"])
 def logout():
@@ -210,19 +292,27 @@ def logout():
     return redirect(url_for("index"))
 
 
+# --------------------------------------------------
+# STUDENT DASHBOARD
+# --------------------------------------------------
+
 @app.route("/dashboard")
 @login_required
 def dashboard():
     db = get_db()
 
-    application = db.execute("""
+    application = db.execute(
+        """
         SELECT applications.*, hostels.name AS hostel_name,
                allocations.bed_number
         FROM applications
         JOIN hostels ON hostels.id = applications.hostel_id
-        LEFT JOIN allocations ON allocations.user_id = applications.user_id
+        LEFT JOIN allocations
+            ON allocations.user_id = applications.user_id
         WHERE applications.user_id = ?
-    """, (session["user_id"],)).fetchone()
+        """,
+        (session["user_id"],)
+    ).fetchone()
 
     hostels = db.execute(
         "SELECT * FROM hostels ORDER BY name"
@@ -235,14 +325,24 @@ def dashboard():
     )
 
 
+# --------------------------------------------------
+# HOSTEL APPLICATION
+# --------------------------------------------------
+
 @app.route("/apply", methods=["POST"])
 @login_required
 def apply():
     hostel_id = request.form.get("hostel_id", type=int)
 
+    if hostel_id is None:
+        flash("Please select a valid hostel.", "error")
+        return redirect(url_for("dashboard"))
+
     db = get_db()
+
     hostel = db.execute(
-        "SELECT id FROM hostels WHERE id = ?", (hostel_id,)
+        "SELECT id FROM hostels WHERE id = ?",
+        (hostel_id,)
     ).fetchone()
 
     if not hostel:
@@ -250,18 +350,30 @@ def apply():
         return redirect(url_for("dashboard"))
 
     try:
-        db.execute("""
+        db.execute(
+            """
             INSERT INTO applications (user_id, hostel_id)
             VALUES (?, ?)
-        """, (session["user_id"], hostel_id))
+            """,
+            (session["user_id"], hostel_id)
+        )
+
         db.commit()
         flash("Application submitted successfully.", "success")
+
     except sqlite3.IntegrityError:
         db.rollback()
-        flash("You already have an application on record.", "error")
+        flash(
+            "You already have an application on record.",
+            "error"
+        )
 
     return redirect(url_for("dashboard"))
 
+
+# --------------------------------------------------
+# ADMIN DASHBOARD
+# --------------------------------------------------
 
 @app.route("/admin")
 @login_required
@@ -269,7 +381,8 @@ def apply():
 def admin():
     db = get_db()
 
-    applications = db.execute("""
+    applications = db.execute(
+        """
         SELECT applications.id, applications.status,
                applications.created_at, users.full_name,
                users.matric_number, users.department, users.level,
@@ -278,14 +391,21 @@ def admin():
         JOIN users ON users.id = applications.user_id
         JOIN hostels ON hostels.id = applications.hostel_id
         ORDER BY applications.created_at DESC
-    """).fetchall()
+        """
+    ).fetchall()
 
-    hostels = db.execute("""
+    hostels = db.execute(
+        """
         SELECT hostels.*,
-            (SELECT COUNT(*) FROM allocations
-             WHERE allocations.hostel_id = hostels.id) AS occupied
-        FROM hostels ORDER BY hostels.name
-    """).fetchall()
+            (
+                SELECT COUNT(*)
+                FROM allocations
+                WHERE allocations.hostel_id = hostels.id
+            ) AS occupied
+        FROM hostels
+        ORDER BY hostels.name
+        """
+    ).fetchall()
 
     return render_template(
         "admin.html",
@@ -294,17 +414,22 @@ def admin():
     )
 
 
+# --------------------------------------------------
+# BED ALLOCATION
+# --------------------------------------------------
+
 def allocate_bed(db, user_id, hostel_id):
-    """Allocate the first available bed, within a write transaction."""
     existing = db.execute(
-        "SELECT id FROM allocations WHERE user_id = ?", (user_id,)
+        "SELECT id FROM allocations WHERE user_id = ?",
+        (user_id,)
     ).fetchone()
 
     if existing:
         return
 
     hostel = db.execute(
-        "SELECT capacity FROM hostels WHERE id = ?", (hostel_id,)
+        "SELECT capacity FROM hostels WHERE id = ?",
+        (hostel_id,)
     ).fetchone()
 
     if hostel is None:
@@ -313,28 +438,43 @@ def allocate_bed(db, user_id, hostel_id):
     occupied = {
         row["bed_number"]
         for row in db.execute(
-            "SELECT bed_number FROM allocations WHERE hostel_id = ?",
+            """
+            SELECT bed_number FROM allocations
+            WHERE hostel_id = ?
+            """,
             (hostel_id,)
         ).fetchall()
     }
 
     bed_number = next(
-        (number for number in range(1, hostel["capacity"] + 1)
-         if number not in occupied),
+        (
+            number
+            for number in range(1, hostel["capacity"] + 1)
+            if number not in occupied
+        ),
         None
     )
 
     if bed_number is None:
         raise ValueError("No beds are available in this hostel.")
 
-    db.execute("""
+    db.execute(
+        """
         INSERT INTO allocations (user_id, hostel_id, bed_number)
         VALUES (?, ?, ?)
-    """, (user_id, hostel_id, bed_number))
+        """,
+        (user_id, hostel_id, bed_number)
+    )
 
 
-@app.route("/admin/application/<int:application_id>/<action>",
-           methods=["POST"])
+# --------------------------------------------------
+# ADMIN APPROVAL AND REJECTION
+# --------------------------------------------------
+
+@app.route(
+    "/admin/application/<int:application_id>/<action>",
+    methods=["POST"]
+)
 @login_required
 @admin_required
 def update_application(application_id, action):
@@ -344,12 +484,12 @@ def update_application(application_id, action):
     db = get_db()
 
     try:
-        # Prevent two concurrent approvals from taking the same bed.
         db.execute("BEGIN IMMEDIATE")
 
-        application = db.execute("""
-            SELECT * FROM applications WHERE id = ?
-        """, (application_id,)).fetchone()
+        application = db.execute(
+            "SELECT * FROM applications WHERE id = ?",
+            (application_id,)
+        ).fetchone()
 
         if application is None:
             db.rollback()
@@ -357,19 +497,32 @@ def update_application(application_id, action):
 
         if action == "approve":
             allocate_bed(
-                db, application["user_id"], application["hostel_id"]
+                db,
+                application["user_id"],
+                application["hostel_id"]
             )
+
             db.execute(
-                "UPDATE applications SET status = 'approved' WHERE id = ?",
+                """
+                UPDATE applications
+                SET status = 'approved'
+                WHERE id = ?
+                """,
                 (application_id,)
             )
+
         else:
             db.execute(
                 "DELETE FROM allocations WHERE user_id = ?",
                 (application["user_id"],)
             )
+
             db.execute(
-                "UPDATE applications SET status = 'rejected' WHERE id = ?",
+                """
+                UPDATE applications
+                SET status = 'rejected'
+                WHERE id = ?
+                """,
                 (application_id,)
             )
 
@@ -379,14 +532,21 @@ def update_application(application_id, action):
     except ValueError as error:
         db.rollback()
         flash(str(error), "error")
+
     except sqlite3.IntegrityError:
         db.rollback()
-        flash("Allocation conflict. Please review this application.", "error")
+        flash(
+            "Allocation conflict. Please review this application.",
+            "error"
+        )
 
     return redirect(url_for("admin"))
 
 
-# Initialize the database when the application starts.
+# --------------------------------------------------
+# START APPLICATION
+# --------------------------------------------------
+
 init_db()
 
 if __name__ == "__main__":
