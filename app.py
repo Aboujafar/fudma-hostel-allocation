@@ -1,4 +1,3 @@
-
 import os
 import re
 import sqlite3
@@ -20,6 +19,7 @@ from werkzeug.security import (
     generate_password_hash,
     check_password_hash,
 )
+from werkzeug.middleware.proxy_fix import ProxyFix
 from flask_wtf.csrf import CSRFProtect
 
 
@@ -28,9 +28,17 @@ from flask_wtf.csrf import CSRFProtect
 # ==================================================
 
 BASE_DIR = Path(__file__).resolve().parent
-DATABASE = BASE_DIR / "hostel.db"
+
+# On Render, set DATABASE_PATH to a Persistent Disk location,
+# for example /var/data/hostel.db. Locally it defaults to hostel.db.
+DATABASE = Path(os.environ.get("DATABASE_PATH", BASE_DIR / "hostel.db"))
+DATABASE.parent.mkdir(parents=True, exist_ok=True)
 
 app = Flask(__name__)
+
+# Render sits behind a proxy/HTTPS terminator. ProxyFix lets Flask
+# see the real scheme and host so secure cookies and redirects work.
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 
 app.config["SECRET_KEY"] = os.environ.get("FLASK_SECRET_KEY")
 
@@ -44,6 +52,9 @@ app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 app.config["SESSION_COOKIE_SECURE"] = (
     os.environ.get("FLASK_HTTPS_ONLY", "0") == "1"
 )
+
+# Set LOGIN_DEBUG=1 in Render only while troubleshooting login.
+LOGIN_DEBUG = os.environ.get("LOGIN_DEBUG", "0") == "1"
 
 csrf = CSRFProtect(app)
 
@@ -67,6 +78,60 @@ def close_db(error=None):
 
     if db is not None:
         db.close()
+
+
+# ==================================================
+# ADMIN SEEDING
+# ==================================================
+
+def seed_admin(db):
+    """
+    Create an administrator account from environment variables
+    (ADMIN_MATRIC and ADMIN_PASSWORD) if it does not exist yet.
+    Change the password after the first login.
+    """
+    matric = os.environ.get("ADMIN_MATRIC", "").strip()
+    password = os.environ.get("ADMIN_PASSWORD", "")
+
+    if not matric or not password:
+        print(
+            "Admin seed skipped: ADMIN_MATRIC / ADMIN_PASSWORD not set.",
+            flush=True,
+        )
+        return
+
+    exists = db.execute(
+        "SELECT 1 FROM users WHERE matric_number = ?",
+        (matric,),
+    ).fetchone()
+
+    if exists:
+        return
+
+    db.execute(
+        """
+        INSERT INTO users (
+            full_name,
+            matric_number,
+            department,
+            level,
+            email,
+            student_contact,
+            next_of_kin_name,
+            next_of_kin_contact,
+            password_hash,
+            role
+        )
+        VALUES (?, ?, 'Administration', 'N/A', '', '', '', '', ?, 'admin')
+        """,
+        (
+            "System Administrator",
+            matric,
+            generate_password_hash(password),
+        ),
+    )
+
+    print("Admin account created.", flush=True)
 
 
 # ==================================================
@@ -146,8 +211,8 @@ def init_db():
                     f"{column_name} {column_type}"
                 )
 
-        # Indexes help with common lookups. Email is not made UNIQUE
-        # here because older records may have blank email addresses.
+        # Email is not made UNIQUE here because older records
+        # may have blank email addresses.
         db.execute("""
             CREATE INDEX IF NOT EXISTS idx_users_email
             ON users(email)
@@ -172,6 +237,8 @@ def init_db():
                 """,
                 (name, 100),
             )
+
+        seed_admin(db)
 
         db.commit()
         print(f"Database initialized: {DATABASE}", flush=True)
@@ -452,15 +519,16 @@ def login():
             except (ValueError, TypeError):
                 password_matches = False
 
-        # Diagnostic information; never log passwords or hashes.
-        print(
-            "LOGIN DEBUG:",
-            "ID =", repr(matric),
-            "USER FOUND =", bool(user),
-            "PASSWORD MATCH =", password_matches,
-            "DATABASE =", str(DATABASE),
-            flush=True,
-        )
+        # Only printed when LOGIN_DEBUG=1. Never logs passwords or hashes.
+        if LOGIN_DEBUG:
+            print(
+                "LOGIN DEBUG:",
+                "ID =", repr(matric),
+                "USER FOUND =", bool(user),
+                "PASSWORD MATCH =", password_matches,
+                "DATABASE =", str(DATABASE),
+                flush=True,
+            )
 
         if password_matches:
             session.clear()
