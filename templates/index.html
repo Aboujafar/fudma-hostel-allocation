@@ -23,7 +23,6 @@
 
     <nav>
         <a href="{{ url_for('index') }}">Home</a>
-        <a href="#hostels">Hostels</a>
         {% if session.get('user_id') %}
             <a href="{{ url_for('dashboard') }}">Dashboard</a>
             <form action="{{ url_for('logout') }}" method="post">
@@ -32,7 +31,7 @@
             </form>
         {% else %}
             <a href="{{ url_for('login') }}">Login</a>
-            <a href="{{ url_for('register') }}" class="nav-button">Register</a>
+            <a href="{{ url_for('register') }}" class="nav-button">Apply</a>
         {% endif %}
     </nav>
 </header>

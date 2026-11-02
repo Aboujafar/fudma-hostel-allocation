@@ -8,116 +8,8 @@
     <link rel="stylesheet"
           href="{{ url_for('static', filename='style.css') }}">
 
-    <style>
-        .registration-card {
-            max-width: 760px;
-            margin: 35px auto;
-            padding: 30px;
-            background: #ffffff;
-            border-radius: 14px;
-            box-shadow: 0 5px 24px rgba(0, 0, 0, 0.08);
-        }
-
-        .registration-card h2 {
-            color: #14532d;
-            margin-bottom: 8px;
-        }
-
-        .registration-card .intro {
-            color: #64748b;
-            margin-bottom: 25px;
-        }
-
-        .form-grid {
-            display: grid;
-            grid-template-columns: repeat(2, minmax(0, 1fr));
-            gap: 17px;
-        }
-
-        .form-group {
-            display: flex;
-            flex-direction: column;
-            gap: 7px;
-        }
-
-        .form-group.full-width {
-            grid-column: 1 / -1;
-        }
-
-        .form-group label {
-            font-weight: 600;
-            color: #334155;
-        }
-
-        .form-group input,
-        .form-group select {
-            width: 100%;
-            box-sizing: border-box;
-            padding: 12px;
-            border: 1px solid #cbd5e1;
-            border-radius: 7px;
-            font-size: 15px;
-            background: #fff;
-        }
-
-        .form-group input:focus,
-        .form-group select:focus {
-            outline: 2px solid #86efac;
-            border-color: #15803d;
-        }
-
-        .form-heading {
-            grid-column: 1 / -1;
-            margin-top: 12px;
-            padding-bottom: 8px;
-            border-bottom: 1px solid #e2e8f0;
-            color: #166534;
-            font-size: 17px;
-        }
-
-        .registration-card .submit-button {
-            width: 100%;
-            margin-top: 25px;
-            padding: 13px;
-            border: none;
-            border-radius: 7px;
-            background: #166534;
-            color: white;
-            font-size: 16px;
-            font-weight: 700;
-            cursor: pointer;
-        }
-
-        .registration-card .submit-button:hover {
-            background: #14532d;
-        }
-
-        .form-note {
-            font-size: 13px;
-            color: #64748b;
-        }
-
-        .login-link {
-            text-align: center;
-            margin-top: 22px;
-        }
-
-        @media (max-width: 600px) {
-            .registration-card {
-                margin: 20px 12px;
-                padding: 20px;
-            }
-
-            .form-grid {
-                grid-template-columns: 1fr;
-            }
-
-            .form-group.full-width,
-            .form-heading {
-                grid-column: auto;
-            }
-        }
-    </style>
+    
+        
 </head>
 
 <body>
@@ -281,20 +173,7 @@
     </div>
 </main>
 
-<script>
-    const registrationForm = document.getElementById("applicationForm");
 
-    registrationForm.addEventListener("submit", function (event) {
-        const password = document.getElementById("password").value;
-        const confirmPassword =
-            document.getElementById("confirm_password").value;
-
-        if (password !== confirmPassword) {
-            event.preventDefault();
-            alert("The passwords do not match. Please check and try again.");
-        }
-    });
-</script>
 
 </body>
 </html>
