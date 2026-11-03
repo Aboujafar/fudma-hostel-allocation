@@ -1,4 +1,5 @@
-Flask
-Flask-WTF
+flask
+flask-wtf
 gunicorn
-psycopg[binary]
+werkzeug
+psycopg2-binary

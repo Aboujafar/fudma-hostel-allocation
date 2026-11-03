@@ -1,6 +1,12 @@
+import base64
+import json
 import os
 import re
-import sqlite3
+import psycopg2
+import psycopg2.extras
+import threading
+import urllib.error
+import urllib.request
 from functools import wraps
 from pathlib import Path
 
@@ -29,10 +35,14 @@ from flask_wtf.csrf import CSRFProtect
 
 BASE_DIR = Path(__file__).resolve().parent
 
-# On Render, set DATABASE_PATH to a Persistent Disk location,
-# for example /var/data/hostel.db. Locally it defaults to hostel.db.
-DATABASE = Path(os.environ.get("DATABASE_PATH", BASE_DIR / "hostel.db"))
-DATABASE.parent.mkdir(parents=True, exist_ok=True)
+# Postgres connection string (Neon, Supabase, Render Postgres...).
+# Set DATABASE_URL in Render > Environment. Keep it private.
+DATABASE_URL = os.environ.get("DATABASE_URL")
+
+if not DATABASE_URL:
+    raise RuntimeError(
+        "Set DATABASE_URL before starting the application."
+    )
 
 app = Flask(__name__)
 
@@ -60,14 +70,139 @@ csrf = CSRFProtect(app)
 
 
 # ==================================================
-# DATABASE CONNECTION
+# EMAIL NOTIFICATIONS (Mailjet HTTPS API)
 # ==================================================
+# Render's free plan blocks SMTP ports, so emails are sent through
+# Mailjet's HTTPS API. Set these in Render > Environment:
+#   MAILJET_API_KEY     - API key from your Mailjet account
+#   MAILJET_SECRET_KEY  - Secret key from your Mailjet account
+#   MAIL_SENDER         - sender email verified in Mailjet
+#   MAIL_SENDER_NAME    - optional, defaults to "FUDMA Hostels"
+# If any required value is missing, emails are skipped and the
+# app keeps working normally.
+
+def _send_email_now(to_email, to_name, subject, html_body):
+    api_key = os.environ.get("MAILJET_API_KEY", "")
+    secret_key = os.environ.get("MAILJET_SECRET_KEY", "")
+    sender = os.environ.get("MAIL_SENDER", "")
+    sender_name = os.environ.get("MAIL_SENDER_NAME", "FUDMA Hostels")
+
+    if not api_key or not secret_key or not sender or not to_email:
+        print("Email skipped: missing configuration or recipient.", flush=True)
+        return
+
+    payload = json.dumps({
+        "Messages": [
+            {
+                "From": {"Email": sender, "Name": sender_name},
+                "To": [{"Email": to_email, "Name": to_name or to_email}],
+                "Subject": subject,
+                "HTMLPart": html_body,
+            }
+        ]
+    }).encode("utf-8")
+
+    credentials = base64.b64encode(
+        f"{api_key}:{secret_key}".encode("utf-8")
+    ).decode("ascii")
+
+    request_obj = urllib.request.Request(
+        "https://api.mailjet.com/v3.1/send",
+        data=payload,
+        headers={
+            "Authorization": f"Basic {credentials}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+
+    try:
+        with urllib.request.urlopen(request_obj, timeout=10) as response:
+            print(f"Email sent (status {response.status}).", flush=True)
+    except urllib.error.HTTPError as error:
+        print(f"Email failed: HTTP {error.code}", flush=True)
+    except Exception as error:
+        print(f"Email failed: {type(error).__name__}", flush=True)
+
+
+def send_email(to_email, to_name, subject, html_body):
+    """Send in a background thread so pages never wait on email."""
+    threading.Thread(
+        target=_send_email_now,
+        args=(to_email, to_name, subject, html_body),
+        daemon=True,
+    ).start()
+
+
+def notify_application_result(db, application_id):
+    """Email the student after an admin approves or rejects."""
+    row = run(db,
+        """
+        SELECT users.full_name,
+               users.email,
+               applications.status,
+               hostels.name AS hostel_name,
+               allocations.bed_number
+        FROM applications
+        JOIN users ON users.id = applications.user_id
+        JOIN hostels ON hostels.id = applications.hostel_id
+        LEFT JOIN allocations
+            ON allocations.user_id = applications.user_id
+        WHERE applications.id = %s
+        """,
+        (application_id,),
+    ).fetchone()
+
+    if row is None or not row["email"]:
+        return
+
+    name = row["full_name"]
+
+    if row["status"] == "approved":
+        subject = "Your FUDMA hostel application has been approved"
+        body = (
+            f"<p>Dear {name},</p>"
+            f"<p>Your application has been <b>approved</b>.</p>"
+            f"<p>Hostel: <b>{row['hostel_name']}</b><br>"
+            f"Bed number: <b>{row['bed_number']}</b></p>"
+            f"<p>Log in to your dashboard for details.</p>"
+            f"<p>FUDMA Hostels</p>"
+        )
+    else:
+        subject = "Update on your FUDMA hostel application"
+        body = (
+            f"<p>Dear {name},</p>"
+            f"<p>We are sorry to inform you that your application for "
+            f"<b>{row['hostel_name']}</b> was not approved.</p>"
+            f"<p>Please contact the hostel administration for more "
+            f"information.</p><p>FUDMA Hostels</p>"
+        )
+
+    send_email(row["email"], name, subject, body)
+
+
+# ==================================================
+# DATABASE CONNECTION (Postgres)
+# ==================================================
+
+def connect():
+    return psycopg2.connect(
+        DATABASE_URL,
+        cursor_factory=psycopg2.extras.RealDictCursor,
+        connect_timeout=10,
+    )
+
+
+def run(db, sql, params=()):
+    """Execute a query and return the cursor (rows behave like dicts)."""
+    cur = db.cursor()
+    cur.execute(sql, params if params else None)
+    return cur
+
 
 def get_db():
     if "db" not in g:
-        g.db = sqlite3.connect(DATABASE, timeout=10)
-        g.db.row_factory = sqlite3.Row
-        g.db.execute("PRAGMA foreign_keys = ON")
+        g.db = connect()
 
     return g.db
 
@@ -100,29 +235,24 @@ def seed_admin(db):
         )
         return
 
-    exists = db.execute(
-        "SELECT 1 FROM users WHERE matric_number = ?",
+    exists = run(
+        db,
+        "SELECT 1 FROM users WHERE matric_number = %s",
         (matric,),
     ).fetchone()
 
     if exists:
         return
 
-    db.execute(
+    run(
+        db,
         """
         INSERT INTO users (
-            full_name,
-            matric_number,
-            department,
-            level,
-            email,
-            student_contact,
-            next_of_kin_name,
-            next_of_kin_contact,
-            password_hash,
-            role
+            full_name, matric_number, department, level,
+            email, student_contact, next_of_kin_name,
+            next_of_kin_contact, password_hash, role
         )
-        VALUES (?, ?, 'Administration', 'N/A', '', '', '', '', ?, 'admin')
+        VALUES (%s, %s, 'Administration', 'N/A', '', '', '', '', %s, 'admin')
         """,
         (
             "System Administrator",
@@ -135,92 +265,64 @@ def seed_admin(db):
 
 
 # ==================================================
-# DATABASE INITIALIZATION AND SAFE MIGRATION
+# DATABASE INITIALIZATION
 # ==================================================
 
 def init_db():
-    """
-    Create missing tables and add missing profile columns.
-    Existing users, applications, and allocations are preserved.
-    """
-    db = sqlite3.connect(DATABASE, timeout=10)
-    db.row_factory = sqlite3.Row
-    db.execute("PRAGMA foreign_keys = ON")
+    """Create missing tables. Existing data is preserved."""
+    db = connect()
 
     try:
-        db.executescript("""
+        # Stops several workers from creating tables at the same time.
+        run(db, "SELECT pg_advisory_xact_lock(748213)")
+
+        run(db, """
             CREATE TABLE IF NOT EXISTS users (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id SERIAL PRIMARY KEY,
                 full_name TEXT NOT NULL,
                 matric_number TEXT NOT NULL UNIQUE,
                 department TEXT NOT NULL,
                 level TEXT NOT NULL,
+                email TEXT NOT NULL DEFAULT '',
+                student_contact TEXT NOT NULL DEFAULT '',
+                next_of_kin_name TEXT NOT NULL DEFAULT '',
+                next_of_kin_contact TEXT NOT NULL DEFAULT '',
                 password_hash TEXT NOT NULL,
                 role TEXT NOT NULL DEFAULT 'student'
                     CHECK(role IN ('student', 'admin'))
             );
 
             CREATE TABLE IF NOT EXISTS hostels (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id SERIAL PRIMARY KEY,
                 name TEXT NOT NULL UNIQUE,
                 capacity INTEGER NOT NULL CHECK(capacity >= 0)
             );
 
             CREATE TABLE IF NOT EXISTS applications (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER NOT NULL UNIQUE,
-                hostel_id INTEGER NOT NULL,
+                id SERIAL PRIMARY KEY,
+                user_id INTEGER NOT NULL UNIQUE REFERENCES users(id),
+                hostel_id INTEGER NOT NULL REFERENCES hostels(id),
                 status TEXT NOT NULL DEFAULT 'pending'
                     CHECK(status IN ('pending', 'approved', 'rejected')),
-                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY(user_id) REFERENCES users(id),
-                FOREIGN KEY(hostel_id) REFERENCES hostels(id)
+                created_at TEXT NOT NULL DEFAULT
+                    (to_char(CURRENT_TIMESTAMP, 'YYYY-MM-DD HH24:MI:SS'))
             );
 
             CREATE TABLE IF NOT EXISTS allocations (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER NOT NULL UNIQUE,
-                hostel_id INTEGER NOT NULL,
+                id SERIAL PRIMARY KEY,
+                user_id INTEGER NOT NULL UNIQUE REFERENCES users(id),
+                hostel_id INTEGER NOT NULL REFERENCES hostels(id),
                 bed_number INTEGER NOT NULL,
-                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                UNIQUE(hostel_id, bed_number),
-                FOREIGN KEY(user_id) REFERENCES users(id),
-                FOREIGN KEY(hostel_id) REFERENCES hostels(id)
+                created_at TEXT NOT NULL DEFAULT
+                    (to_char(CURRENT_TIMESTAMP, 'YYYY-MM-DD HH24:MI:SS')),
+                UNIQUE(hostel_id, bed_number)
             );
-        """)
 
-        # Add new columns to older databases without deleting records.
-        existing_columns = {
-            row["name"]
-            for row in db.execute(
-                "PRAGMA table_info(users)"
-            ).fetchall()
-        }
-
-        new_columns = {
-            "email": "TEXT NOT NULL DEFAULT ''",
-            "student_contact": "TEXT NOT NULL DEFAULT ''",
-            "next_of_kin_name": "TEXT NOT NULL DEFAULT ''",
-            "next_of_kin_contact": "TEXT NOT NULL DEFAULT ''",
-        }
-
-        for column_name, column_type in new_columns.items():
-            if column_name not in existing_columns:
-                db.execute(
-                    f"ALTER TABLE users ADD COLUMN "
-                    f"{column_name} {column_type}"
-                )
-
-        # Email is not made UNIQUE here because older records
-        # may have blank email addresses.
-        db.execute("""
             CREATE INDEX IF NOT EXISTS idx_users_email
-            ON users(email)
-        """)
+                ON users(email);
 
-        db.execute("""
             CREATE INDEX IF NOT EXISTS idx_applications_status
-            ON applications(status)
+                ON applications(status);
         """)
 
         # Initial options for a new database only.
@@ -230,10 +332,12 @@ def init_db():
             "Hayin Gada Hostel",
             "Isa Kaita Hostel",
         ):
-            db.execute(
+            run(
+                db,
                 """
-                INSERT OR IGNORE INTO hostels (name, capacity)
-                VALUES (?, ?)
+                INSERT INTO hostels (name, capacity)
+                VALUES (%s, %s)
+                ON CONFLICT (name) DO NOTHING
                 """,
                 (name, 100),
             )
@@ -241,7 +345,7 @@ def init_db():
         seed_admin(db)
 
         db.commit()
-        print(f"Database initialized: {DATABASE}", flush=True)
+        print("Database initialized (postgres).", flush=True)
 
     except Exception:
         db.rollback()
@@ -305,7 +409,7 @@ def valid_phone(phone):
 def index():
     db = get_db()
 
-    hostels = db.execute(
+    hostels = run(db,
         "SELECT * FROM hostels ORDER BY name"
     ).fetchall()
 
@@ -410,14 +514,14 @@ def register():
         db = get_db()
 
         # Check the matriculation number and email.
-        existing_user = db.execute(
+        existing_user = run(db,
             """
             SELECT matric_number, email
             FROM users
-            WHERE matric_number = ?
+            WHERE matric_number = %s
                OR (
                    email <> ''
-                   AND lower(email) = lower(?)
+                   AND lower(email) = lower(%s)
                )
             """,
             (matric, email),
@@ -438,7 +542,7 @@ def register():
             return render_template("register.html")
 
         try:
-            db.execute(
+            run(db,
                 """
                 INSERT INTO users (
                     full_name,
@@ -452,7 +556,7 @@ def register():
                     password_hash,
                     role
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'student')
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'student')
                 """,
                 (
                     full_name,
@@ -469,7 +573,7 @@ def register():
 
             db.commit()
 
-        except sqlite3.IntegrityError:
+        except psycopg2.IntegrityError:
             db.rollback()
             flash(
                 "Registration could not be completed. "
@@ -500,11 +604,11 @@ def login():
 
         db = get_db()
 
-        user = db.execute(
+        user = run(db,
             """
             SELECT *
             FROM users
-            WHERE matric_number = ?
+            WHERE matric_number = %s
             """,
             (matric,),
         ).fetchone()
@@ -526,7 +630,7 @@ def login():
                 "ID =", repr(matric),
                 "USER FOUND =", bool(user),
                 "PASSWORD MATCH =", password_matches,
-                "DATABASE =", str(DATABASE),
+                "DATABASE = postgres",
                 flush=True,
             )
 
@@ -569,7 +673,7 @@ def logout():
 def dashboard():
     db = get_db()
 
-    student = db.execute(
+    student = run(db,
         """
         SELECT full_name,
                matric_number,
@@ -580,12 +684,12 @@ def dashboard():
                next_of_kin_name,
                next_of_kin_contact
         FROM users
-        WHERE id = ?
+        WHERE id = %s
         """,
         (session["user_id"],),
     ).fetchone()
 
-    application = db.execute(
+    application = run(db,
         """
         SELECT applications.*,
                hostels.name AS hostel_name,
@@ -595,12 +699,12 @@ def dashboard():
             ON hostels.id = applications.hostel_id
         LEFT JOIN allocations
             ON allocations.user_id = applications.user_id
-        WHERE applications.user_id = ?
+        WHERE applications.user_id = %s
         """,
         (session["user_id"],),
     ).fetchone()
 
-    hostels = db.execute(
+    hostels = run(db,
         "SELECT * FROM hostels ORDER BY name"
     ).fetchall()
 
@@ -627,8 +731,8 @@ def apply():
 
     db = get_db()
 
-    hostel = db.execute(
-        "SELECT id FROM hostels WHERE id = ?",
+    hostel = run(db,
+        "SELECT id, name FROM hostels WHERE id = %s",
         (hostel_id,),
     ).fetchone()
 
@@ -637,10 +741,10 @@ def apply():
         return redirect(url_for("dashboard"))
 
     try:
-        db.execute(
+        run(db,
             """
             INSERT INTO applications (user_id, hostel_id)
-            VALUES (?, ?)
+            VALUES (%s, %s)
             """,
             (session["user_id"], hostel_id),
         )
@@ -648,7 +752,26 @@ def apply():
         db.commit()
         flash("Application submitted successfully.", "success")
 
-    except sqlite3.IntegrityError:
+        applicant = run(db,
+            "SELECT full_name, email FROM users WHERE id = %s",
+            (session["user_id"],),
+        ).fetchone()
+
+        if applicant and applicant["email"]:
+            send_email(
+                applicant["email"],
+                applicant["full_name"],
+                "FUDMA hostel application received",
+                (
+                    f"<p>Dear {applicant['full_name']},</p>"
+                    f"<p>We have received your application for "
+                    f"<b>{hostel['name']}</b>. Its status is "
+                    f"<b>pending</b>. You will get another email once "
+                    f"it has been reviewed.</p><p>FUDMA Hostels</p>"
+                ),
+            )
+
+    except psycopg2.IntegrityError:
         db.rollback()
         flash(
             "You already have an application on record.",
@@ -668,7 +791,7 @@ def apply():
 def admin():
     db = get_db()
 
-    applications = db.execute(
+    applications = run(db,
         """
         SELECT applications.id,
                applications.status,
@@ -695,7 +818,7 @@ def admin():
         """
     ).fetchall()
 
-    hostels = db.execute(
+    hostels = run(db,
         """
         SELECT hostels.*,
                (
@@ -724,16 +847,16 @@ def allocate_bed(db, user_id, hostel_id):
     Allocate the first available bed in the selected accommodation.
     This function is called during administrator approval.
     """
-    existing = db.execute(
-        "SELECT id FROM allocations WHERE user_id = ?",
+    existing = run(db,
+        "SELECT id FROM allocations WHERE user_id = %s",
         (user_id,),
     ).fetchone()
 
     if existing:
         return
 
-    hostel = db.execute(
-        "SELECT capacity FROM hostels WHERE id = ?",
+    hostel = run(db,
+        "SELECT capacity FROM hostels WHERE id = %s FOR UPDATE",
         (hostel_id,),
     ).fetchone()
 
@@ -742,11 +865,11 @@ def allocate_bed(db, user_id, hostel_id):
 
     occupied = {
         row["bed_number"]
-        for row in db.execute(
+        for row in run(db,
             """
             SELECT bed_number
             FROM allocations
-            WHERE hostel_id = ?
+            WHERE hostel_id = %s
             """,
             (hostel_id,),
         ).fetchall()
@@ -766,10 +889,10 @@ def allocate_bed(db, user_id, hostel_id):
             "No beds are available in the selected accommodation."
         )
 
-    db.execute(
+    run(db,
         """
         INSERT INTO allocations (user_id, hostel_id, bed_number)
-        VALUES (?, ?, ?)
+        VALUES (%s, %s, %s)
         """,
         (user_id, hostel_id, bed_number),
     )
@@ -792,15 +915,12 @@ def update_application(application_id, action):
     db = get_db()
 
     try:
-        # Prevent concurrent approval requests from selecting
-        # the same available bed.
-        db.execute("BEGIN IMMEDIATE")
-
-        application = db.execute(
+        application = run(db,
             """
             SELECT *
             FROM applications
-            WHERE id = ?
+            WHERE id = %s
+            FOR UPDATE
             """,
             (application_id,),
         ).fetchone()
@@ -816,34 +936,36 @@ def update_application(application_id, action):
                 application["hostel_id"],
             )
 
-            db.execute(
+            run(db,
                 """
                 UPDATE applications
                 SET status = 'approved'
-                WHERE id = ?
+                WHERE id = %s
                 """,
                 (application_id,),
             )
 
         else:
-            db.execute(
+            run(db,
                 """
                 DELETE FROM allocations
-                WHERE user_id = ?
+                WHERE user_id = %s
                 """,
                 (application["user_id"],),
             )
 
-            db.execute(
+            run(db,
                 """
                 UPDATE applications
                 SET status = 'rejected'
-                WHERE id = ?
+                WHERE id = %s
                 """,
                 (application_id,),
             )
 
         db.commit()
+
+        notify_application_result(db, application_id)
 
         if action == "approve":
             flash(
@@ -857,14 +979,14 @@ def update_application(application_id, action):
         db.rollback()
         flash(str(error), "error")
 
-    except sqlite3.IntegrityError:
+    except psycopg2.IntegrityError:
         db.rollback()
         flash(
             "Allocation conflict. Please review this application.",
             "error",
         )
 
-    except sqlite3.Error:
+    except psycopg2.Error:
         db.rollback()
         app.logger.exception("Database error updating application.")
         flash(
